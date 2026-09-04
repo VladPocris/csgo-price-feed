@@ -67,26 +67,35 @@ function median(values) {
 	return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-// One number per skin: the median across whatever wears are
-// actually listed, because the game has no float system.
-function resolvePrice(market, baseName, phase) {
-	const found = [];
-	for (const wear of WEARS) {
-		const entry = market.get(marketKey(`${baseName} (${wear})`, phase));
+// One price PER WEAR, because a Factory New and a
+// Battle-Scarred of the same skin are different items at very
+// different prices. Returns { [wearIndex]: usd }, where index 0
+// means "no wear" - vanilla knives and the crate containers.
+function resolvePrices(market, baseName, phase) {
+	const out = {};
+
+	for (let i = 0; i < WEARS.length; i++) {
+		const entry = market.get(marketKey(`${baseName} (${WEARS[i]})`, phase));
 		if (entry) {
 			const v = priceOf(entry);
-			if (v != null) found.push(v);
+			if (v != null) out[i + 1] = Math.round(v * 100) / 100;
 		}
 	}
-	if (found.length === 0) {
-		// knives with no wear, and the crate containers themselves
-		const vanilla = market.get(marketKey(baseName, phase));
-		if (vanilla) {
-			const v = priceOf(vanilla);
-			if (v != null) found.push(v);
-		}
+
+	const vanilla = market.get(marketKey(baseName, phase));
+	if (vanilla) {
+		const v = priceOf(vanilla);
+		if (v != null) out[0] = Math.round(v * 100) / 100;
 	}
-	const result = median(found);
+
+	return out;
+}
+
+// A single representative number, for the crate containers.
+function representative(prices) {
+	const values = Object.values(prices);
+	if (values.length === 0) return null;
+	const result = median(values);
 	return result == null ? null : Math.round(result * 100) / 100;
 }
 
@@ -146,11 +155,11 @@ export async function buildFeed() {
 
 		for (const item of [...crate.contains, ...(crate.contains_rare ?? [])]) {
 			if (skins[item.id] !== undefined) continue;
-			const usd = resolvePrice(market, prefix + item.name, item.phase);
-			if (usd != null) skins[item.id] = usd;
+			const prices = resolvePrices(market, prefix + item.name, item.phase);
+			if (Object.keys(prices).length > 0) skins[item.id] = prices;
 		}
 
-		const containerUsd = resolvePrice(market, crate.market_hash_name, null);
+		const containerUsd = representative(resolvePrices(market, crate.market_hash_name, null));
 		if (containerUsd != null) crates[crate.id] = containerUsd;
 	}
 

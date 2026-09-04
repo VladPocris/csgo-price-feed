@@ -40,7 +40,7 @@ jobs:
           node-version: "22"
 
       - name: Build the feed
-        run: node tools/feed-builder.mjs
+        run: node feed-builder.mjs
 
       - name: Commit if anything changed
         run: |
