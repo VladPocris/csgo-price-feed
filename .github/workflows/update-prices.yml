@@ -1,0 +1,55 @@
+name: Update skin prices
+
+# Refreshes the price feed the game reads.
+#
+# There is no server anywhere in this setup: this job fetches
+# Skinport (which only answers brotli, so Roblox cannot call it
+# directly), merges it with the CS:GO crate list, and commits
+# feed/prices.json. Roblox then reads that file straight from
+# raw.githubusercontent.com, the same host the crate data
+# already comes from.
+#
+# Runs every two days to match PriceConfig.RefreshSeconds, and
+# can be run by hand from the Actions tab any time.
+
+on:
+  schedule:
+    # 04:17 UTC, every second day. Deliberately not on the hour -
+    # GitHub's scheduler is busiest then and delays are common.
+    - cron: "17 4 */2 * *"
+  workflow_dispatch:
+
+# Needed so the job can push the regenerated feed back.
+permissions:
+  contents: write
+
+concurrency:
+  group: update-prices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build the feed
+        run: node tools/feed-builder.mjs
+
+      - name: Commit if anything changed
+        run: |
+          if [ -z "$(git status --porcelain feed/prices.json)" ]; then
+            echo "No price movement; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add feed/prices.json
+          git commit -m "Update skin prices ($(date -u +%Y-%m-%d))"
+          git push
